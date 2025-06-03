@@ -1,0 +1,1238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Irrigation System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+    
+    <style>
+        /* Smart Irrigation System Styles */
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        /* Moisture level gradient */
+        .moisture-level-bar {
+            background: linear-gradient(to right, #ef4444, #f59e0b, #10b981);
+            transition: width 0.5s ease;
+            height: 100%; /* Ensure the gradient bar fills the container height */
+            border-radius: inherit; /* Inherit border radius from parent */
+        }
+        .moisture-level-container {
+             height: 0.5rem; /* h-2 equivalent */
+             border-radius: 9999px; /* rounded-full equivalent */
+             background-color: #e5e7eb; /* bg-gray-200 for the track */
+             overflow: hidden; /* Ensure gradient stays within bounds */
+        }
+
+        /* Animation for watering status */
+        @keyframes pulse {
+            0% { opacity: 0.6; }
+            50% { opacity: 1; }
+            100% { opacity: 0.6; }
+        }
+
+        .watering-status {
+            animation: pulse 1.5s infinite;
+        }
+
+        /* Interactive Elements */
+        button, .plant-card, select {
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+            cursor: pointer;
+        }
+
+        button:hover:not(:disabled), select:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .plant-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        button:active, .plant-card:active, select:active {
+            transform: translateY(1px);
+        }
+
+        /* Button/Select focus states */
+        button:focus, select:focus {
+            outline: 2px solid rgba(59, 130, 246, 0.5);
+            outline-offset: 2px;
+        }
+
+        /* Loading spinner */
+        .loading-spinner {
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+
+        /* Modal styles */
+        .modal-enter {
+            opacity: 0;
+            transform: scale(0.95);
+        }
+        .modal-enter-active {
+            opacity: 1;
+            transform: scale(1);
+            transition: opacity 300ms, transform 300ms;
+        }
+        .modal-leave {
+            opacity: 1;
+            transform: scale(1);
+        }
+        .modal-leave-active {
+            opacity: 0;
+            transform: scale(0.95);
+            transition: opacity 300ms, transform 300ms;
+        }
+    </style>
+
+</head>
+
+<body class="bg-gray-50">
+    <div class="min-h-screen">
+        <!-- Header -->
+        <header class="bg-green-600 text-white p-4 shadow-md">
+            <div class="container mx-auto flex justify-between items-center">
+                <h1 class="text-2xl font-bold">
+                    <i class="fas fa-tint mr-2"></i>Smart Irrigation
+                </h1>
+                <div class="flex space-x-4">
+                    <!-- Settings button could potentially open a more comprehensive settings modal in the future -->
+                    <button class="bg-green-700 hover:bg-green-800 px-4 py-2 rounded-lg">
+                        <i class="fas fa-cog mr-2"></i>Settings
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="container mx-auto p-4">
+            <!-- Weather-Based Irrigation Panel -->
+            <div class="bg-blue-50 border border-blue-200 rounded-xl shadow-md p-6 mb-8">
+                <h2 class="text-2xl font-bold text-blue-800 mb-6">
+                    <i class="fas fa-cloud-sun-rain text-blue-500 mr-2"></i>Weather-Based Irrigation
+                </h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="weather-today bg-white p-4 rounded-lg shadow">
+                        <div class="text-center">
+                            <div class="text-5xl mb-3"><i class="fas fa-sun text-yellow-400"></i></div>
+                            <p class="text-lg font-bold">Today</p>
+                            <p class="text-gray-700" id="weather-today-details">Loading...</p>
+                            <p class="mt-2 p-2 rounded-lg bg-gray-100 text-gray-800 font-medium" id="weather-today-recommendation">
+                                <i class="fas fa-spinner fa-spin mr-1"></i> Checking...
+                            </p>
+                        </div>
+                    </div>
+                    <div class="weather-tomorrow bg-white p-4 rounded-lg shadow">
+                        <div class="text-center">
+                            <div class="text-5xl mb-3"><i class="fas fa-cloud-rain text-blue-400"></i></div>
+                            <p class="text-lg font-bold">Tomorrow</p>
+                            <p class="text-gray-700" id="weather-tomorrow-details">Loading...</p>
+                            <p class="mt-2 p-2 rounded-lg bg-gray-100 text-gray-800 font-medium" id="weather-tomorrow-recommendation">
+                                <i class="fas fa-spinner fa-spin mr-1"></i> Checking...
+                            </p>
+                        </div>
+                    </div>
+                    <div class="bg-white p-4 rounded-lg shadow">
+                        <div class="text-center">
+                            <div class="text-5xl mb-3"><i class="fas fa-calendar-check text-purple-500"></i></div>
+                            <p class="text-lg font-bold">Recommendation</p>
+                            <p class="text-gray-700">Based on forecast</p>
+                            <button id="open-schedule-modal" class="mt-3 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg w-full">
+                                <i class="fas fa-calendar-alt mr-2"></i> Set Auto Schedule
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dashboard Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <!-- Soil Moisture Card -->
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-lg font-semibold text-gray-700">
+                            <i class="fas fa-seedling text-green-500 mr-2"></i>Soil Moisture
+                        </h2>
+                        <div class="text-right">
+                            <p id="moisture-percentage" class="text-3xl font-bold text-gray-800">--%</p>
+                            <span id="moisture-status" class="text-sm font-medium px-2 py-1 rounded-full bg-gray-100 text-gray-800">
+                                Loading...
+                            </span>
+                        </div>
+                    </div>
+                    <div class="moisture-level-container mb-2">
+                         <div id="moisture-level-bar" class="moisture-level-bar" style="width: 0%;"></div>
+                    </div>
+                    <div class="flex justify-between text-sm text-gray-500 mb-2">
+                        <span>Dry</span>
+                        <span>Optimal</span>
+                        <span>Wet</span>
+                    </div>
+                </div>
+                <!-- Temperature Card -->
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h2 class="text-lg font-semibold text-gray-700 mb-4">
+                        <i class="fas fa-temperature-high text-red-500 mr-2"></i>Temperature
+                    </h2>
+                    <p id="current-temp" class="text-3xl font-bold text-gray-800">--°C</p>
+                    <p id="feels-like-temp" class="text-sm text-gray-500 mt-1">Feels like --°C</p>
+                </div>
+                <!-- Humidity Card -->
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h2 class="text-lg font-semibold text-gray-700 mb-4">
+                        <i class="fas fa-cloud-rain text-blue-500 mr-2"></i>Humidity
+                    </h2>
+                    <p id="current-humidity" class="text-3xl font-bold text-gray-800">--%</p>
+                    <p id="dew-point" class="text-sm text-gray-500 mt-1">Dew point: --°C</p>
+                </div>
+                <!-- System Status Card -->
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h2 class="text-lg font-semibold text-gray-700 mb-4">
+                        <i class="fas fa-power-off text-purple-500 mr-2"></i>System Status
+                    </h2>
+                    <div class="flex items-center">
+                        <div id="system-status-indicator" class="w-3 h-3 rounded-full bg-gray-400 mr-2"></div>
+                        <span id="system-status-text" class="text-gray-800">Initializing...</span>
+                    </div>
+                    <p id="last-watered" class="text-sm text-gray-500 mt-2">Last watered: Never</p>
+                    <p id="auto-schedule-status" class="text-sm text-gray-500 mt-1">Auto-Schedule: <span class="font-medium">Disabled</span></p>
+                </div>
+            </div>
+
+            <!-- Controls Section -->
+            <div class="bg-white rounded-xl shadow-md p-6 mb-8">
+                <h2 class="text-xl font-semibold text-gray-800 mb-6">
+                    <i class="fas fa-sliders-h text-blue-500 mr-2"></i>Controls
+                </h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <!-- Mode Selection -->
+                    <div>
+                        <h3 class="text-lg font-medium text-gray-700 mb-3">Operation Mode</h3>
+                        <div class="flex space-x-4">
+                            <button id="mode-auto" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg w-full">
+                                Auto
+                            </button>
+                            <button id="mode-manual" class="bg-blue-600 text-white px-4 py-2 rounded-lg w-full">
+                                Manual
+                            </button>
+                        </div>
+                         <p id="mode-status-description" class="text-xs text-gray-500 mt-1">Manual mode active. Use 'Water Now' or the schedule.</p>
+                    </div>
+                    <!-- Soil Type Selection (NEW) -->
+                    <div>
+                        <h3 class="text-lg font-medium text-gray-700 mb-3">Soil Type</h3>
+                        <select id="soil-type-select" class="w-full border border-gray-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white">
+                            <!-- Options will be populated by JS -->
+                            <option value="">Loading...</option>
+                        </select>
+                        <p id="soil-description" class="text-xs text-gray-500 mt-1">Select your soil type for optimal watering.</p>
+                    </div>
+                    <!-- Water Now Button -->
+                    <div>
+                        <h3 class="text-lg font-medium text-gray-700 mb-3">Manual Control</h3>
+                        <button id="water-now" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg w-full transition-all duration-300">
+                            <i class="fas fa-tint mr-2"></i>Water Now
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Plant Moisture Map -->
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <h2 class="text-xl font-semibold text-gray-800 mb-6">
+                    <i class="fas fa-seedling text-green-500 mr-2"></i>Plant Moisture Levels (Zones)
+                </h2>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="plant-zones-container">
+                    <!-- Zones will be populated by JS -->
+                    <div class="text-center p-4 text-gray-500">Loading zones...</div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Mini Chatbot Interface -->
+    <div class="fixed bottom-4 right-4 w-16 h-16 bg-green-600 rounded-full shadow-xl flex items-center justify-center cursor-pointer hover:bg-green-700 transition-all z-40" id="chatbot-mini">
+        <i class="fas fa-robot text-white text-2xl"></i>
+    </div>
+
+    <!-- Expanded Chatbot (hidden by default) -->
+    <div class="fixed bottom-20 right-4 w-80 bg-white rounded-xl shadow-xl border border-gray-200 hidden z-50" id="chatbot-expanded">
+        <div class="bg-green-600 text-white p-3 rounded-t-xl flex justify-between items-center">
+            <h3 class="font-semibold text-sm">
+                <i class="fas fa-robot mr-2"></i>Plant Care AI Assistant
+            </h3>
+            <button id="chatbot-close" type="button" class="text-white hover:bg-green-700 p-1 rounded" title="Close Chatbot">
+               <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="h-64 overflow-y-auto p-3 bg-gray-50" id="chatbot-messages">
+            <!-- Initial AI message -->
+        </div>
+        <div class="p-3 border-t bg-white">
+            <div class="flex space-x-2">
+                <input type="text" id="chat-input" placeholder="Ask about your plants..."
+                    class="flex-1 border border-gray-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent">
+                <button id="send-message" class="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-lg transition-colors" aria-label="Send Message">
+                    <i class="fas fa-paper-plane text-sm"></i>
+                </button>
+            </div>
+            <div class="flex items-center justify-between mt-2 text-xs text-gray-500">
+                <span id="typing-indicator" class="hidden">
+                    <i class="fas fa-circle-notch fa-spin mr-1"></i>AI is thinking...
+                </span>
+                <span class="ml-auto">Powered by PlantAI</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Auto Schedule Modal (Hidden by default) -->
+    <div id="schedule-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex items-center justify-center hidden z-50 modal-enter">
+        <div class="relative mx-auto p-6 border w-full max-w-md shadow-lg rounded-xl bg-white">
+            <!-- Modal Header -->
+            <div class="flex justify-between items-center border-b pb-3 mb-4">
+                <h3 class="text-xl font-semibold text-gray-800"><i class="fas fa-calendar-alt mr-2 text-blue-500"></i>Configure Auto Schedule</h3>
+                <button id="close-schedule-modal" class="text-gray-400 hover:text-gray-600 text-2xl font-bold">&times;</button>
+            </div>
+            <!-- Modal Content -->
+            <div class="space-y-4">
+                <!-- Enable/Disable Switch -->
+                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <label for="enable-schedule" class="text-gray-700 font-medium">Enable Auto Scheduling</label>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="enable-schedule" class="sr-only peer">
+                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
+                    </label>
+                </div>
+
+                <!-- Schedule Settings (shown when enabled) -->
+                <div id="schedule-settings" class="hidden space-y-3 border-t pt-4 mt-4">
+                     <p class="text-sm text-gray-600">Watering will be adjusted based on soil type (<span id="modal-soil-type" class="font-medium">Loam</span>) and weather forecast.</p>
+                     <div class="p-3 border rounded-lg bg-blue-50">
+                         <label class="block text-sm font-medium text-gray-700 mb-1">Recommended Frequency</label>
+                         <p id="modal-watering-frequency" class="text-sm text-gray-900">--</p>
+                     </div>
+                     <div class="p-3 border rounded-lg bg-green-50">
+                         <label class="block text-sm font-medium text-gray-700 mb-1">Target Moisture Range</label>
+                         <p id="modal-optimal-moisture" class="text-sm text-gray-900">--% to --%</p>
+                     </div>
+                     <p class="text-xs text-gray-500 italic">Note: The system automatically skips watering if significant rain is forecast or if moisture is already high.</p>
+                </div>
+
+            </div>
+            <!-- Modal Footer -->
+            <div class="mt-6 pt-4 border-t flex justify-end space-x-3">
+                 <button id="cancel-schedule-modal" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Cancel</button>
+                 <button id="save-schedule-modal" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Settings</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Configuration ---
+        const CONFIG = {
+            OPENWEATHER_API_KEY: 'b35f725ab585c46c7159fe48c269114b', // Replace with your actual OpenWeatherMap API key
+            CITY: 'Tunis', // Replace with your city
+            UPDATE_INTERVAL: 30 * 60 * 1000, // Weather update interval (30 minutes)
+            INITIAL_MOISTURE: 65, // Starting moisture percentage
+            INITIAL_ZONES: [ // Moisture for different plant zones
+                { name: 'Lemon Trees', moisture: 68, icon: 'https://cdn-icons-png.flaticon.com/512/15613/15613023.png' },
+                { name: 'Olive Trees', moisture: 55, icon: 'https://cdn-icons-png.flaticon.com/512/5091/5091017.png' },
+                { name: 'Tomato Plants', moisture: 72, icon: 'https://cdn-icons-png.flaticon.com/512/1790/1790387.png' },
+                { name: 'Potato Field', moisture: 38, icon: 'https://cdn-icons-png.flaticon.com/512/1790/1790395.png' }
+            ]
+        };
+
+        // --- State Variables ---
+        let systemState = {
+            moisture: CONFIG.INITIAL_MOISTURE,
+            zones: [...CONFIG.INITIAL_ZONES],
+            temperature: null,
+            humidity: null,
+            feelsLike: null,
+            dewPoint: null,
+            lastWatered: null, // Timestamp
+            systemActive: true, // Overall system status
+            operationMode: 'manual' // 'auto' or 'manual'
+        };
+
+        let weatherData = {
+            current: { temp: null, condition: 'loading', humidity: null },
+            forecast: { temp: null, condition: 'loading', precipitationChance: 0 }
+        };
+
+        const soilTypes = {
+            sandy: {
+                name: 'Sandy Soil',
+                drainageRate: 'Fast',
+                waterRetention: 'Low',
+                wateringFrequency: 'Daily',
+                optimalMoisture: { min: 40, max: 70 },
+                description: 'Drains quickly, needs frequent watering.'
+            },
+            clay: {
+                name: 'Clay Soil',
+                drainageRate: 'Slow',
+                waterRetention: 'High',
+                wateringFrequency: '2-3 times per week',
+                optimalMoisture: { min: 50, max: 80 },
+                description: 'Retains water well, water less frequently but deeply.'
+            },
+            loam: {
+                name: 'Loam Soil',
+                drainageRate: 'Moderate',
+                waterRetention: 'Moderate',
+                wateringFrequency: 'Every 2-3 days',
+                optimalMoisture: { min: 45, max: 75 },
+                description: 'Balanced drainage and retention, ideal for most plants.'
+            },
+            silt: {
+                name: 'Silt Soil',
+                drainageRate: 'Moderate',
+                waterRetention: 'Good',
+                wateringFrequency: 'Every 2-4 days',
+                optimalMoisture: { min: 48, max: 78 },
+                description: 'Good water retention with moderate drainage.'
+            }
+        };
+
+        let autoSchedule = {
+            enabled: false,
+            soilType: 'loam', // Default soil type
+            // schedules: [], // Future: Add specific time slots
+            nextWatering: null // Timestamp or indication
+        };
+
+        // --- DOM Elements Cache ---
+        const DOMElements = {};
+
+        function cacheDOMElements() {
+            DOMElements.moisturePercentage = document.getElementById('moisture-percentage');
+            DOMElements.moistureStatus = document.getElementById('moisture-status');
+            DOMElements.moistureLevelBar = document.getElementById('moisture-level-bar');
+            DOMElements.currentTemp = document.getElementById('current-temp');
+            DOMElements.feelsLikeTemp = document.getElementById('feels-like-temp');
+            DOMElements.currentHumidity = document.getElementById('current-humidity');
+            DOMElements.dewPoint = document.getElementById('dew-point');
+            DOMElements.systemStatusIndicator = document.getElementById('system-status-indicator');
+            DOMElements.systemStatusText = document.getElementById('system-status-text');
+            DOMElements.lastWatered = document.getElementById('last-watered');
+            DOMElements.autoScheduleStatus = document.getElementById('auto-schedule-status');
+            DOMElements.waterNowButton = document.getElementById('water-now');
+            DOMElements.plantZonesContainer = document.getElementById('plant-zones-container');
+            DOMElements.weatherTodayDetails = document.getElementById('weather-today-details');
+            DOMElements.weatherTodayRecommendation = document.getElementById('weather-today-recommendation');
+            DOMElements.weatherTomorrowDetails = document.getElementById('weather-tomorrow-details');
+            DOMElements.weatherTomorrowRecommendation = document.getElementById('weather-tomorrow-recommendation');
+            DOMElements.modeAutoButton = document.getElementById('mode-auto');
+            DOMElements.modeManualButton = document.getElementById('mode-manual');
+            DOMElements.modeStatusDescription = document.getElementById('mode-status-description');
+            DOMElements.soilTypeSelect = document.getElementById('soil-type-select');
+            DOMElements.soilDescription = document.getElementById('soil-description');
+            // Schedule Modal Elements
+            DOMElements.scheduleModal = document.getElementById('schedule-modal');
+            DOMElements.openScheduleModalButton = document.getElementById('open-schedule-modal');
+            DOMElements.closeScheduleModalButton = document.getElementById('close-schedule-modal');
+            DOMElements.cancelScheduleModalButton = document.getElementById('cancel-schedule-modal');
+            DOMElements.saveScheduleModalButton = document.getElementById('save-schedule-modal');
+            DOMElements.enableScheduleCheckbox = document.getElementById('enable-schedule');
+            DOMElements.scheduleSettingsDiv = document.getElementById('schedule-settings');
+            DOMElements.modalSoilType = document.getElementById('modal-soil-type');
+            DOMElements.modalWateringFrequency = document.getElementById('modal-watering-frequency');
+            DOMElements.modalOptimalMoisture = document.getElementById('modal-optimal-moisture');
+            // Chatbot Elements
+            DOMElements.chatbotMini = document.getElementById('chatbot-mini');
+            DOMElements.chatbotExpanded = document.getElementById('chatbot-expanded');
+            DOMElements.chatbotClose = document.getElementById('chatbot-close');
+            DOMElements.chatbotMessages = document.getElementById('chatbot-messages');
+            DOMElements.chatInput = document.getElementById('chat-input');
+            DOMElements.sendMessageButton = document.getElementById('send-message');
+            DOMElements.typingIndicator = document.getElementById('typing-indicator');
+        }
+
+        // --- UI Update Functions ---
+
+        function updateZonesUI() {
+            if (!DOMElements.plantZonesContainer) return;
+            DOMElements.plantZonesContainer.innerHTML = ''; // Clear existing zones
+
+            systemState.zones.forEach((zone, index) => {
+                const moisture = Math.round(zone.moisture);
+                let bgColor = 'bg-green-50 border-green-200';
+                let textColor = 'text-green-700';
+                const soilProfile = soilTypes[autoSchedule.soilType] || soilTypes.loam;
+                const minOptimal = soilProfile.optimalMoisture.min;
+                const maxOptimal = soilProfile.optimalMoisture.max;
+
+                if (moisture < minOptimal) {
+                    bgColor = 'bg-red-50 border-red-200';
+                    textColor = 'text-red-700';
+                } else if (moisture > maxOptimal) {
+                    bgColor = 'bg-blue-50 border-blue-200'; // Use blue for too wet
+                    textColor = 'text-blue-700';
+                } else if (moisture < minOptimal + (maxOptimal - minOptimal) * 0.3) { // Low end of optimal
+                     bgColor = 'bg-yellow-50 border-yellow-200';
+                     textColor = 'text-yellow-700';
+                }
+
+                const zoneElement = document.createElement('div');
+                zoneElement.className = `plant-card ${bgColor} rounded-lg p-4 text-center transition-all hover:shadow-lg hover:-translate-y-1 cursor-pointer`;
+                zoneElement.innerHTML = `
+                    <img src="${zone.icon}" class="w-12 h-12 mx-auto mb-2" alt="${zone.name}">
+                    <p class="font-medium text-gray-700">${zone.name}</p>
+                    <p class="text-xl font-bold ${textColor}">${moisture}%</p>
+                    <p class="text-xs text-gray-500 mt-1">Zone ${index + 1}</p>
+                `;
+                DOMElements.plantZonesContainer.appendChild(zoneElement);
+            });
+        }
+
+        function updateMoistureUI() {
+            const moisture = Math.round(systemState.moisture);
+            const soilProfile = soilTypes[autoSchedule.soilType] || soilTypes.loam;
+            const minOptimal = soilProfile.optimalMoisture.min;
+            const maxOptimal = soilProfile.optimalMoisture.max;
+
+            if (DOMElements.moisturePercentage) {
+                DOMElements.moisturePercentage.textContent = `${moisture}%`;
+            }
+            if (DOMElements.moistureLevelBar) {
+                 DOMElements.moistureLevelBar.style.width = `${moisture}%`;
+            }
+
+            if (DOMElements.moistureStatus) {
+                DOMElements.moistureStatus.className = "text-sm font-medium px-2 py-1 rounded-full"; // Reset classes
+                if (moisture < minOptimal) {
+                    DOMElements.moistureStatus.textContent = "Critical Low";
+                    DOMElements.moistureStatus.classList.add("bg-red-100", "text-red-800");
+                } else if (moisture > maxOptimal) {
+                    DOMElements.moistureStatus.textContent = "High";
+                    DOMElements.moistureStatus.classList.add("bg-blue-100", "text-blue-800");
+                } else if (moisture < minOptimal + (maxOptimal - minOptimal) * 0.3) {
+                    DOMElements.moistureStatus.textContent = "Low Optimal";
+                    DOMElements.moistureStatus.classList.add("bg-yellow-100", "text-yellow-800");
+                } else {
+                    DOMElements.moistureStatus.textContent = "Optimal";
+                    DOMElements.moistureStatus.classList.add("bg-green-100", "text-green-800");
+                }
+            }
+        }
+
+        function updateSystemStatusUI() {
+             if (DOMElements.systemStatusIndicator && DOMElements.systemStatusText) {
+                 if (systemState.systemActive) {
+                     DOMElements.systemStatusIndicator.classList.remove('bg-gray-400', 'bg-red-500');
+                     DOMElements.systemStatusIndicator.classList.add('bg-green-500');
+                     DOMElements.systemStatusText.textContent = 'Active';
+                 } else {
+                     DOMElements.systemStatusIndicator.classList.remove('bg-green-500');
+                     DOMElements.systemStatusIndicator.classList.add('bg-red-500');
+                     DOMElements.systemStatusText.textContent = 'Inactive';
+                 }
+             }
+             if (DOMElements.lastWatered) {
+                 if (systemState.lastWatered) {
+                     DOMElements.lastWatered.textContent = `Last watered: ${timeAgo(systemState.lastWatered)}`;
+                 } else {
+                     DOMElements.lastWatered.textContent = 'Last watered: Never';
+                 }
+             }
+             if (DOMElements.autoScheduleStatus) {
+                 const statusText = autoSchedule.enabled ? 'Enabled' : 'Disabled';
+                 const statusClass = autoSchedule.enabled ? 'text-green-700' : 'text-red-700';
+                 DOMElements.autoScheduleStatus.innerHTML = `Auto-Schedule: <span class="font-medium ${statusClass}">${statusText}</span>`;
+             }
+        }
+
+        function updateOperationModeUI() {
+            if (!DOMElements.modeAutoButton || !DOMElements.modeManualButton || !DOMElements.modeStatusDescription) return;
+
+            if (systemState.operationMode === 'auto') {
+                DOMElements.modeAutoButton.classList.replace('bg-gray-200', 'bg-green-600');
+                DOMElements.modeAutoButton.classList.replace('text-gray-700', 'text-white');
+                DOMElements.modeManualButton.classList.replace('bg-blue-600', 'bg-gray-200');
+                DOMElements.modeManualButton.classList.replace('text-white', 'text-gray-700');
+                DOMElements.modeStatusDescription.textContent = 'Auto mode active. System manages watering.';
+                DOMElements.waterNowButton.disabled = true; // Disable manual water in auto mode
+                DOMElements.waterNowButton.classList.add('opacity-50', 'cursor-not-allowed');
+            } else { // Manual mode
+                DOMElements.modeManualButton.classList.replace('bg-gray-200', 'bg-blue-600');
+                DOMElements.modeManualButton.classList.replace('text-gray-700', 'text-white');
+                DOMElements.modeAutoButton.classList.replace('bg-green-600', 'bg-gray-200');
+                DOMElements.modeAutoButton.classList.replace('text-white', 'text-gray-700');
+                DOMElements.modeStatusDescription.textContent = 'Manual mode active. Use \'Water Now\' or the schedule.';
+                DOMElements.waterNowButton.disabled = false;
+                DOMElements.waterNowButton.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+            // Ensure auto-schedule setting reflects the mode
+            autoSchedule.enabled = (systemState.operationMode === 'auto');
+            updateSystemStatusUI(); // Update status display
+        }
+
+        function updateSoilSelectionUI() {
+            if (!DOMElements.soilTypeSelect || !DOMElements.soilDescription) return;
+            const selectedSoil = autoSchedule.soilType;
+            DOMElements.soilTypeSelect.value = selectedSoil;
+            const soilInfo = soilTypes[selectedSoil];
+            if (soilInfo) {
+                DOMElements.soilDescription.textContent = soilInfo.description;
+            }
+            // Update moisture display based on new optimal ranges
+            updateMoistureUI();
+        }
+
+        function populateSoilSelector() {
+            if (!DOMElements.soilTypeSelect) return;
+            DOMElements.soilTypeSelect.innerHTML = ''; // Clear loading/existing options
+            for (const typeKey in soilTypes) {
+                const option = document.createElement('option');
+                option.value = typeKey;
+                option.textContent = soilTypes[typeKey].name;
+                DOMElements.soilTypeSelect.appendChild(option);
+            }
+            // Set initial value and description
+            updateSoilSelectionUI();
+        }
+
+        // --- Weather Functions ---
+        async function fetchWeatherData() {
+            if (!CONFIG.OPENWEATHER_API_KEY || CONFIG.OPENWEATHER_API_KEY === 'YOUR_API_KEY') {
+                console.warn('OpenWeatherMap API key not set. Using mock weather data.');
+                // Use some default mock data if API key is missing
+                weatherData = {
+                    current: { temp: 25, condition: 'sunny', humidity: 50, feelsLike: 26, dewPoint: 14 },
+                    forecast: { temp: 22, condition: 'cloudy', precipitationChance: 20 }
+                };
+                updateWeatherUI();
+                checkAutoWatering();
+                return;
+            }
+
+            try {
+                console.log('Fetching weather data...');
+                const response = await fetch(`https://api.openweathermap.org/data/2.5/forecast?q=${CONFIG.CITY}&appid=${CONFIG.OPENWEATHER_API_KEY}&units=metric`);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                const current = data.list[0];
+                const today = new Date();
+                const tomorrow = new Date(today);
+                tomorrow.setDate(tomorrow.getDate() + 1);
+
+                const tomorrowForecastEntry = data.list.find(entry => {
+                    const entryDate = new Date(entry.dt * 1000);
+                    return entryDate.getDate() === tomorrow.getDate() &&
+                           entryDate.getMonth() === tomorrow.getMonth() &&
+                           entryDate.getHours() >= 6; // Look for forecast around morning/midday
+                }) || data.list[8]; // Fallback to ~24 hours later if specific time not found
+
+                // Calculate Dew Point (approximation)
+                const tempC = current.main.temp;
+                const humidity = current.main.humidity / 100;
+                const a = 17.27;
+                const b = 237.7;
+                const alpha = ((a * tempC) / (b + tempC)) + Math.log(humidity);
+                const dewPointC = (b * alpha) / (a - alpha);
+
+                // Update global weather data
+                weatherData.current = {
+                    temp: Math.round(tempC),
+                    condition: getWeatherCondition(current.weather[0].id),
+                    humidity: current.main.humidity,
+                    feelsLike: Math.round(current.main.feels_like),
+                    dewPoint: Math.round(dewPointC)
+                };
+
+                if (tomorrowForecastEntry) {
+                    weatherData.forecast = {
+                        temp: Math.round(tomorrowForecastEntry.main.temp),
+                        condition: getWeatherCondition(tomorrowForecastEntry.weather[0].id),
+                        precipitationChance: Math.round((tomorrowForecastEntry.pop || 0) * 100)
+                    };
+                }
+
+                updateWeatherUI();
+                checkAutoWatering(); // Check if watering is needed based on new weather
+                console.log('Weather data updated:', weatherData);
+            } catch (error) {
+                console.error('Error fetching weather data:', error);
+                // Display error or use fallback data
+                 weatherData = {
+                    current: { temp: 'N/A', condition: 'error', humidity: 'N/A', feelsLike: 'N/A', dewPoint: 'N/A' },
+                    forecast: { temp: 'N/A', condition: 'error', precipitationChance: 'N/A' }
+                };
+                updateWeatherUI();
+            }
+        }
+
+        function getWeatherCondition(code) {
+            if (code >= 200 && code < 300) return 'thunderstorm';
+            if (code >= 300 && code < 400) return 'drizzle';
+            if (code >= 500 && code < 600) return 'rainy';
+            if (code >= 600 && code < 700) return 'snow';
+            if (code === 800) return 'sunny';
+            if (code === 801) return 'partly cloudy';
+            if (code > 801) return 'cloudy';
+            return 'unknown';
+        }
+
+        function getWeatherIconClass(condition) {
+            switch (condition) {
+                case 'sunny': return 'fas fa-sun text-yellow-400';
+                case 'partly cloudy': return 'fas fa-cloud-sun text-yellow-500';
+                case 'cloudy': return 'fas fa-cloud text-gray-400';
+                case 'rainy': return 'fas fa-cloud-showers-heavy text-blue-500';
+                case 'drizzle': return 'fas fa-cloud-rain text-blue-400';
+                case 'thunderstorm': return 'fas fa-bolt text-yellow-600';
+                case 'snow': return 'fas fa-snowflake text-blue-300';
+                default: return 'fas fa-question-circle text-gray-500';
+            }
+        }
+
+        function updateWeatherUI() {
+            // Update dashboard cards
+            if (DOMElements.currentTemp) DOMElements.currentTemp.textContent = weatherData.current.temp !== null ? `${weatherData.current.temp}°C` : '--°C';
+            if (DOMElements.feelsLikeTemp) DOMElements.feelsLikeTemp.textContent = weatherData.current.feelsLike !== null ? `Feels like ${weatherData.current.feelsLike}°C` : 'Feels like --°C';
+            if (DOMElements.currentHumidity) DOMElements.currentHumidity.textContent = weatherData.current.humidity !== null ? `${weatherData.current.humidity}%` : '--%';
+            if (DOMElements.dewPoint) DOMElements.dewPoint.textContent = weatherData.current.dewPoint !== null ? `Dew point: ${weatherData.current.dewPoint}°C` : 'Dew point: --°C';
+
+            // Update Weather-Based Irrigation Panel
+            const todayCard = document.querySelector('.weather-today');
+            const tomorrowCard = document.querySelector('.weather-tomorrow');
+
+            if (todayCard) {
+                const iconEl = todayCard.querySelector('.text-5xl i');
+                if (iconEl) iconEl.className = `${getWeatherIconClass(weatherData.current.condition)} text-5xl mb-3`;
+                if (DOMElements.weatherTodayDetails) DOMElements.weatherTodayDetails.textContent = `${weatherData.current.temp}°C / ${capitalizeFirst(weatherData.current.condition)}`;
+                if (DOMElements.weatherTodayRecommendation) {
+                    let recommendation = 'No specific action needed.';
+                    let classes = 'bg-green-100 text-green-800';
+                    let icon = 'fa-check-circle';
+                    if (weatherData.current.condition === 'rainy' || weatherData.current.condition === 'thunderstorm') {
+                        recommendation = 'Watering likely not needed today.';
+                        classes = 'bg-blue-100 text-blue-800';
+                        icon = 'fa-info-circle';
+                    }
+                    DOMElements.weatherTodayRecommendation.className = `mt-2 p-2 rounded-lg ${classes} font-medium`;
+                    DOMElements.weatherTodayRecommendation.innerHTML = `<i class="fas ${icon} mr-1"></i> ${recommendation}`;
+                }
+            }
+
+            if (tomorrowCard) {
+                const iconEl = tomorrowCard.querySelector('.text-5xl i');
+                 if (iconEl) iconEl.className = `${getWeatherIconClass(weatherData.forecast.condition)} text-5xl mb-3`;
+                if (DOMElements.weatherTomorrowDetails) DOMElements.weatherTomorrowDetails.textContent = `${weatherData.forecast.temp}°C / ${capitalizeFirst(weatherData.forecast.condition)}`;
+                if (DOMElements.weatherTomorrowRecommendation) {
+                    let recommendation = 'Monitor conditions.';
+                    let classes = 'bg-gray-100 text-gray-800';
+                    let icon = 'fa-clock';
+                    if (weatherData.forecast.precipitationChance > 50) {
+                        recommendation = `Reduce watering (${weatherData.forecast.precipitationChance}% rain chance).`;
+                        classes = 'bg-blue-100 text-blue-800';
+                        icon = 'fa-cloud-rain';
+                    } else if (weatherData.forecast.temp > 30) {
+                         recommendation = 'Potential high heat, ensure adequate moisture.';
+                         classes = 'bg-yellow-100 text-yellow-800';
+                         icon = 'fa-temperature-high';
+                    }
+                    DOMElements.weatherTomorrowRecommendation.className = `mt-2 p-2 rounded-lg ${classes} font-medium`;
+                    DOMElements.weatherTomorrowRecommendation.innerHTML = `<i class="fas ${icon} mr-1"></i> ${recommendation}`;
+                }
+            }
+        }
+
+        // --- Watering Logic ---
+        function handleWatering(isAutoTriggered = false) {
+            console.log(`Watering initiated. Manual: ${!isAutoTriggered}`);
+            const waterButton = DOMElements.waterNowButton;
+
+            if (!waterButton) {
+                console.error('Water button not found');
+                return;
+            }
+            if (waterButton.disabled && !isAutoTriggered) {
+                 console.log('Manual watering disabled.');
+                 return;
+            }
+
+            // Show loading/watering state
+            const originalHTML = waterButton.innerHTML;
+            waterButton.innerHTML = '<i class="fas fa-spinner loading-spinner mr-2"></i> Watering...';
+            waterButton.disabled = true;
+            waterButton.classList.add('opacity-75', 'cursor-not-allowed');
+            if (!isAutoTriggered) waterButton.classList.replace('bg-blue-600', 'bg-indigo-600'); // Indicate activity
+
+            // Simulate watering duration
+            const duration = 3000; // 3 seconds
+            setTimeout(() => {
+                console.log('Watering simulation complete.');
+
+                // Increase moisture levels
+                const baseIncrease = 15;
+                systemState.moisture = Math.min(100, systemState.moisture + baseIncrease);
+                systemState.zones = systemState.zones.map(zone => {
+                    const increase = baseIncrease + (Math.random() * 10 - 5); // Add some variance
+                    return { ...zone, moisture: Math.min(100, zone.moisture + increase) };
+                });
+
+                systemState.lastWatered = Date.now();
+
+                // Refresh UI
+                updateMoistureUI();
+                updateZonesUI();
+                updateSystemStatusUI();
+
+                // Show success state on button (only if manually triggered)
+                if (!isAutoTriggered) {
+                    waterButton.innerHTML = '<i class="fas fa-check-circle mr-2"></i> Watered!';
+                    waterButton.classList.replace('bg-indigo-600', 'bg-green-600');
+
+                    // Restore button state after 2 seconds
+                    setTimeout(() => {
+                        waterButton.innerHTML = originalHTML;
+                        waterButton.disabled = (systemState.operationMode === 'auto'); // Re-disable if in auto mode
+                        waterButton.classList.remove('opacity-75', 'cursor-not-allowed', 'bg-green-600');
+                        waterButton.classList.add('bg-blue-600'); // Restore original color
+                        if (systemState.operationMode === 'auto') waterButton.classList.add('opacity-50', 'cursor-not-allowed');
+                    }, 2000);
+                } else {
+                     // If auto-triggered, just re-enable the button if mode is manual
+                     waterButton.disabled = (systemState.operationMode === 'auto');
+                     waterButton.classList.remove('opacity-75', 'cursor-not-allowed');
+                     if (systemState.operationMode === 'auto') waterButton.classList.add('opacity-50', 'cursor-not-allowed');
+                }
+
+            }, duration);
+        }
+
+        function checkAutoWatering() {
+            if (!autoSchedule.enabled || systemState.operationMode !== 'auto') {
+                // console.log('Auto watering check skipped (disabled or not in auto mode).');
+                return;
+            }
+
+            const soilProfile = soilTypes[autoSchedule.soilType] || soilTypes.loam;
+            const now = new Date();
+
+            // Basic check: Is moisture below the minimum optimal level?
+            const needsWater = systemState.moisture < soilProfile.optimalMoisture.min;
+
+            // Weather check: Is significant rain expected soon?
+            const rainExpected = weatherData.forecast.precipitationChance > 60;
+
+            // Time check: Has it been watered recently? (e.g., within last 12 hours)
+            const recentlyWatered = systemState.lastWatered && (now.getTime() - systemState.lastWatered < 12 * 60 * 60 * 1000);
+
+            console.log(`Auto Watering Check: Needs Water? ${needsWater}, Rain Expected? ${rainExpected}, Recently Watered? ${recentlyWatered}`);
+
+            if (needsWater && !rainExpected && !recentlyWatered) {
+                console.log('Auto-watering conditions met. Triggering watering.');
+                handleWatering(true); // true indicates auto-triggered
+            } else {
+                console.log('Auto-watering conditions not met.');
+            }
+        }
+
+        // --- Schedule Modal Logic ---
+        function openScheduleModal() {
+            if (!DOMElements.scheduleModal) return;
+            const soilInfo = soilTypes[autoSchedule.soilType];
+
+            // Populate modal with current settings
+            DOMElements.enableScheduleCheckbox.checked = autoSchedule.enabled;
+            DOMElements.modalSoilType.textContent = soilInfo ? soilInfo.name : 'Unknown';
+            if (soilInfo) {
+                DOMElements.modalWateringFrequency.textContent = soilInfo.wateringFrequency;
+                DOMElements.modalOptimalMoisture.textContent = `${soilInfo.optimalMoisture.min}% to ${soilInfo.optimalMoisture.max}%`;
+            } else {
+                 DOMElements.modalWateringFrequency.textContent = '--';
+                 DOMElements.modalOptimalMoisture.textContent = '--% to --%';
+            }
+
+            // Show/hide settings based on checkbox state
+            if (autoSchedule.enabled) {
+                DOMElements.scheduleSettingsDiv.classList.remove('hidden');
+            } else {
+                DOMElements.scheduleSettingsDiv.classList.add('hidden');
+            }
+
+            DOMElements.scheduleModal.classList.remove('hidden');
+            // Trigger animation
+            requestAnimationFrame(() => {
+                 DOMElements.scheduleModal.classList.remove('modal-enter');
+                 DOMElements.scheduleModal.classList.add('modal-enter-active');
+            });
+        }
+
+        function closeScheduleModal() {
+            if (!DOMElements.scheduleModal) return;
+             DOMElements.scheduleModal.classList.remove('modal-enter-active');
+             DOMElements.scheduleModal.classList.add('modal-leave-active');
+             setTimeout(() => {
+                 DOMElements.scheduleModal.classList.add('hidden');
+                 DOMElements.scheduleModal.classList.remove('modal-leave-active');
+                 DOMElements.scheduleModal.classList.add('modal-enter'); // Reset for next open
+             }, 300); // Match animation duration
+        }
+
+        function saveScheduleSettings() {
+            autoSchedule.enabled = DOMElements.enableScheduleCheckbox.checked;
+            // If enabled, switch to Auto mode. If disabled, switch to Manual mode.
+            systemState.operationMode = autoSchedule.enabled ? 'auto' : 'manual';
+            console.log('Schedule settings saved:', autoSchedule);
+            updateOperationModeUI(); // This also updates the status display
+            closeScheduleModal();
+        }
+
+        // --- Chatbot Functions ---
+        const plantKnowledge = {
+            problems: {
+                'yellow leaves': { causes: ['overwatering', 'nutrient deficiency', 'natural aging', 'root rot'], solutions: ['Check soil moisture - let it dry between waterings', 'Consider fertilizing with balanced nutrients', 'Remove yellowing leaves to redirect energy', 'Inspect roots for signs of rot'] },
+                'brown leaves': { causes: ['underwatering', 'low humidity', 'heat stress', 'fertilizer burn'], solutions: ['Increase watering frequency gradually', 'Mist leaves or use humidity tray', 'Move away from direct sunlight/heat sources', 'Flush soil to remove excess fertilizer'] },
+                'wilting': { causes: ['dehydration', 'root problems', 'transplant shock', 'disease'], solutions: ['Water thoroughly and check drainage', 'Inspect root system for damage', 'Provide shade and reduce stress', 'Remove affected parts and improve air circulation'] }
+            },
+            plants: {
+                'tomato': { watering: 'Deep, infrequent watering. 1-2 times per week, more in hot weather.', tips: 'Avoid watering leaves to prevent disease. Mulch around base.', common_issues: 'Blossom end rot (calcium deficiency), early blight, hornworms' },
+                'olive': { watering: 'Drought tolerant. Water deeply but infrequently, every 2-3 weeks.', tips: 'Well-draining soil essential. Prune in late winter.', common_issues: 'Overwatering causes root rot. Scale insects, olive knot disease' },
+                'lemon': { watering: 'Keep soil consistently moist but not waterlogged. 2-3 times per week.', tips: 'Needs good drainage and full sun. Feed regularly during growing season.', common_issues: 'Citrus canker, aphids, nutrient deficiencies (yellowing leaves)' },
+                'potato': { watering: 'Regular watering, especially during tuber formation. 1-2 inches per week.', tips: 'Hill soil around plants as they grow. Stop watering 2 weeks before harvest.', common_issues: 'Late blight, Colorado potato beetle, scab (avoid overwatering)' }
+            },
+            seasonal: {
+                'spring': 'Increase watering as plants enter active growth. Start fertilizing. Check for pest emergence.',
+                'summer': 'Monitor for heat stress. Water early morning or evening. Increase humidity for sensitive plants.',
+                'fall': 'Reduce watering frequency. Prepare plants for dormancy. Harvest before frost.',
+                'winter': 'Minimal watering for most plants. Protect from cold. Reduce fertilizing.'
+            }
+        };
+
+        function generateAIResponse(userMessage) {
+            const message = userMessage.toLowerCase();
+            if (message.includes('hello') || message.includes('hi') || message.includes('hey')) {
+                return { text: "Hello! How can I help with your plant care today?", suggestions: ["Watering advice", "Plant health diagnosis", "Seasonal care tips"] };
+            }
+            const plantTypes = Object.keys(plantKnowledge.plants);
+            const mentionedPlant = plantTypes.find(plant => message.includes(plant));
+            if (mentionedPlant) {
+                const info = plantKnowledge.plants[mentionedPlant];
+                return { text: `**${capitalizeFirst(mentionedPlant)} Care:**\nWatering: ${info.watering}\nTips: ${info.tips}\nCommon Issues: ${info.common_issues}`, suggestions: [`${mentionedPlant} problems`, "Watering schedule", "More plant tips"] };
+            }
+            const problemKeys = Object.keys(plantKnowledge.problems);
+            const mentionedProblem = problemKeys.find(problem => message.includes(problem));
+            if (mentionedProblem) {
+                const info = plantKnowledge.problems[mentionedProblem];
+                return { text: `**${mentionedProblem.toUpperCase()} - Possible causes & solutions:**\nCauses: ${info.causes.join(', ')}\nSolutions:\n- ${info.solutions.join('\n- ')}`, suggestions: ["More plant problems", "Watering advice", "Fertilizer tips"] };
+            }
+            if (message.includes('water') || message.includes('irrigation')) {
+                const soilInfo = soilTypes[autoSchedule.soilType];
+                return { text: `💧 **Watering Guidelines:**\n- Check soil moisture 1-2 inches deep.\n- Water deeply, less frequently.\n- Morning watering is often best.\n- Ensure good drainage.\n\nCurrent system: Moisture ${Math.round(systemState.moisture)}%, Soil: ${soilInfo.name}. Consider watering below ${soilInfo.optimalMoisture.min}%.`, suggestions: ["Plant-specific watering", "Overwatering signs", "Drainage problems"] };
+            }
+             if (message.includes('schedule') || message.includes('auto')) {
+                 const scheduleStatus = autoSchedule.enabled ? `enabled (Soil: ${soilTypes[autoSchedule.soilType].name})` : 'disabled';
+                 return { text: `📅 **Auto-Schedule Status:** Currently ${scheduleStatus}. The system waters automatically when moisture is low and no rain is expected. You can configure this using the 'Set Auto Schedule' button.`, suggestions: ["How does auto-schedule work?", "Change soil type", "Manual watering"] };
+             }
+            // Default response
+            return { text: `I can help with watering, plant problems, and seasonal tips. Current moisture is ${Math.round(systemState.moisture)}%. What would you like to know?`, suggestions: ["Watering advice", "Plant problems", "Care tips"] };
+        }
+
+        function addMessageToChat(message, isUser = false, suggestions = []) {
+            const messagesContainer = DOMElements.chatbotMessages;
+            if (!messagesContainer) return;
+            const messageDiv = document.createElement('div');
+            const formattedMessage = message.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
+            let suggestionsHTML = '';
+            if (suggestions.length > 0) {
+                suggestionsHTML = `<div class="mt-2 flex flex-wrap gap-1">${suggestions.map(s => `<button class="suggestion-btn bg-${isUser ? 'blue' : 'green'}-200 text-${isUser ? 'blue' : 'green'}-800 px-2 py-1 rounded text-xs hover:bg-${isUser ? 'blue' : 'green'}-300" data-suggestion="${s}">${s}</button>`).join('')}</div>`;
+            }
+
+            if (isUser) {
+                messageDiv.className = 'flex justify-end mb-3';
+                messageDiv.innerHTML = `<div class="bg-blue-100 rounded-lg p-3 text-sm max-w-[80%]"><p class="font-medium text-blue-800">You</p><p class="text-blue-700 mt-1">${formattedMessage}</p></div>`;
+            } else {
+                messageDiv.className = 'flex justify-start mb-3';
+                messageDiv.innerHTML = `<div class="bg-green-100 rounded-lg p-3 text-sm max-w-[80%]"><p class="font-medium text-green-800">Plant Care AI</p><div class="text-green-700 mt-1">${formattedMessage}</div>${suggestionsHTML}</div>`;
+            }
+            messagesContainer.appendChild(messageDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+            // Add listeners to new suggestion buttons
+            messageDiv.querySelectorAll('.suggestion-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const suggestion = btn.getAttribute('data-suggestion');
+                    if (DOMElements.chatInput) {
+                        DOMElements.chatInput.value = suggestion;
+                        sendMessage();
+                    }
+                });
+            });
+        }
+
+        function sendMessage() {
+            const input = DOMElements.chatInput;
+            if (!input) return;
+            const message = input.value.trim();
+            if (!message) return;
+
+            addMessageToChat(message, true);
+            input.value = '';
+            if (DOMElements.typingIndicator) DOMElements.typingIndicator.classList.remove('hidden');
+
+            setTimeout(() => {
+                if (DOMElements.typingIndicator) DOMElements.typingIndicator.classList.add('hidden');
+                const response = generateAIResponse(message);
+                addMessageToChat(response.text, false, response.suggestions || []);
+            }, 800 + Math.random() * 1000);
+        }
+
+        function initializeChatbot() {
+             if (!DOMElements.chatbotMessages) return;
+             // Initial AI message
+             const initialResponse = generateAIResponse('hello');
+             addMessageToChat(initialResponse.text, false, initialResponse.suggestions);
+
+             // Event Listeners
+             if (DOMElements.chatbotMini && DOMElements.chatbotExpanded) {
+                 DOMElements.chatbotMini.addEventListener('click', () => DOMElements.chatbotExpanded.classList.toggle('hidden'));
+             }
+             if (DOMElements.chatbotClose && DOMElements.chatbotExpanded) {
+                 DOMElements.chatbotClose.addEventListener('click', () => DOMElements.chatbotExpanded.classList.add('hidden'));
+             }
+             if (DOMElements.sendMessageButton) {
+                 DOMElements.sendMessageButton.addEventListener('click', sendMessage);
+             }
+             if (DOMElements.chatInput) {
+                 DOMElements.chatInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
+             }
+             // Global listener for suggestion buttons (delegated)
+             document.addEventListener('click', (e) => {
+                 if (e.target.classList.contains('suggestion-btn') && e.target.closest('#chatbot-messages')) {
+                     // Handled within addMessageToChat now
+                 }
+             });
+        }
+
+        // --- Utility Functions ---
+        function capitalizeFirst(str) {
+            if (!str) return '';
+            return str.charAt(0).toUpperCase() + str.slice(1);
+        }
+
+        function timeAgo(timestamp) {
+            const now = new Date();
+            const past = new Date(timestamp);
+            const diffInSeconds = Math.floor((now - past) / 1000);
+            const diffInMinutes = Math.floor(diffInSeconds / 60);
+            const diffInHours = Math.floor(diffInMinutes / 60);
+            const diffInDays = Math.floor(diffInHours / 24);
+
+            if (diffInSeconds < 60) return 'Just now';
+            if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+            if (diffInHours < 24) return `${diffInHours}h ago`;
+            return `${diffInDays}d ago`;
+        }
+
+        // --- Initialization ---
+        function initApp() {
+            console.log('Initializing Smart Irrigation System v2...');
+            cacheDOMElements();
+
+            // Populate dynamic elements
+            populateSoilSelector();
+
+            // Set initial UI states
+            updateMoistureUI();
+            updateZonesUI();
+            updateSystemStatusUI();
+            updateOperationModeUI(); // Set initial mode display
+
+            // Fetch initial weather data
+            fetchWeatherData();
+            // Set up weather data refresh interval
+            setInterval(fetchWeatherData, CONFIG.UPDATE_INTERVAL);
+
+            // Initialize auto-scheduling check interval
+            setInterval(checkAutoWatering, 60 * 1000); // Check every minute
+
+            // --- Event Listeners ---
+            // Manual Water Button
+            if (DOMElements.waterNowButton) {
+                DOMElements.waterNowButton.addEventListener('click', () => handleWatering(false));
+            } else {
+                console.error('Water button not found during initialization');
+            }
+
+            // Mode Buttons
+            if (DOMElements.modeAutoButton) {
+                DOMElements.modeAutoButton.addEventListener('click', () => {
+                    systemState.operationMode = 'auto';
+                    autoSchedule.enabled = true; // Enabling auto mode implicitly enables schedule
+                    updateOperationModeUI();
+                    console.log('Switched to Auto mode.');
+                });
+            }
+            if (DOMElements.modeManualButton) {
+                DOMElements.modeManualButton.addEventListener('click', () => {
+                    systemState.operationMode = 'manual';
+                    autoSchedule.enabled = false; // Switching to manual implicitly disables schedule
+                    updateOperationModeUI();
+                    console.log('Switched to Manual mode.');
+                });
+            }
+
+            // Soil Type Selector
+            if (DOMElements.soilTypeSelect) {
+                DOMElements.soilTypeSelect.addEventListener('change', (e) => {
+                    autoSchedule.soilType = e.target.value;
+                    console.log('Soil type changed to:', autoSchedule.soilType);
+                    updateSoilSelectionUI();
+                    // Potentially trigger recalculation or update recommendations
+                    checkAutoWatering(); // Re-check conditions with new soil type
+                });
+            }
+
+            // Schedule Modal Buttons & Interactions
+            if (DOMElements.openScheduleModalButton) {
+                DOMElements.openScheduleModalButton.addEventListener('click', openScheduleModal);
+            }
+            if (DOMElements.closeScheduleModalButton) {
+                DOMElements.closeScheduleModalButton.addEventListener('click', closeScheduleModal);
+            }
+            if (DOMElements.cancelScheduleModalButton) {
+                DOMElements.cancelScheduleModalButton.addEventListener('click', closeScheduleModal);
+            }
+            if (DOMElements.saveScheduleModalButton) {
+                DOMElements.saveScheduleModalButton.addEventListener('click', saveScheduleSettings);
+            }
+            if (DOMElements.enableScheduleCheckbox) {
+                DOMElements.enableScheduleCheckbox.addEventListener('change', (e) => {
+                    if (e.target.checked) {
+                        DOMElements.scheduleSettingsDiv.classList.remove('hidden');
+                    } else {
+                        DOMElements.scheduleSettingsDiv.classList.add('hidden');
+                    }
+                });
+            }
+
+            // Initialize Chatbot
+            initializeChatbot();
+
+            // Optional: Simulate gradual moisture decrease over time
+            // setInterval(() => {
+            //     if (systemState.moisture > 0) systemState.moisture = Math.max(0, systemState.moisture - 0.1);
+            //     systemState.zones = systemState.zones.map(z => ({...z, moisture: Math.max(0, z.moisture - 0.08)}));
+            //     updateMoistureUI();
+            //     updateZonesUI();
+            // }, 60 * 1000); // Decrease slightly every minute
+
+            console.log('Smart Irrigation System initialized successfully.');
+        }
+
+        // Wait for DOM to be fully loaded before initializing
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initApp);
+        } else {
+            initApp(); // DOM is already loaded
+        }
+
+        const firebaseConfig = {
+        apiKey: "AIzaSyBQhVMcGJdpq1t7TfRIaerhXPizoYjzT14",
+        authDomain: "smart-irrigation-ccacc.firebaseapp.com",
+        databaseURL: "https://smart-irrigation-ccacc-default-rtdb.europe-west1.firebasedatabase.app/",
+        projectId: "smart-irrigation-ccacc",
+        storageBucket: "smart-irrigation-ccacc.firebasestorage.app",
+        messagingSenderId: "1059891109468",
+        appId: "1:1059891109468:web:330a52e507ee460f72d099"
+          };
+          const app = firebase.initializeApp(firebaseConfig);
+          const db = firebase.database();
+
+          db.ref("soil_moisture").on("value", (snapshot) => {
+    const value = snapshot.val(); // ex: 65
+    document.getElementById("moisture-percentage").textContent = value + "%";
+    document.getElementById("moisture-level-bar").style.width = value + "%";
+
+    // Optionnel : ajuster le statut
+    const status = document.getElementById("moisture-status");
+    if (value < 30) {
+      status.textContent = "Dry";
+      status.className = "text-sm font-medium px-2 py-1 rounded-full bg-red-100 text-red-700";
+    } else if (value < 70) {
+      status.textContent = "Optimal";
+      status.className = "text-sm font-medium px-2 py-1 rounded-full bg-green-100 text-green-700";
+    } else {
+      status.textContent = "Wet";
+      status.className = "text-sm font-medium px-2 py-1 rounded-full bg-blue-100 text-blue-700";
+    }
+  });
+
+  // 🔁 Temperature
+  db.ref("temperature").on("value", (snapshot) => {
+    const temp = snapshot.val();
+    document.getElementById("current-temp").textContent = temp + "°C";
+    document.getElementById("feels-like-temp").textContent = "Feels like " + temp + "°C"; // adapte si tu as une autre valeur
+  });
+
+  // 🔁 Humidity
+  db.ref("humidity").on("value", (snapshot) => {
+    const humidity = snapshot.val();
+    document.getElementById("current-humidity").textContent = humidity + "%";
+    document.getElementById("dew-point").textContent = "Dew point: --°C"; // tu peux remplacer si tu as cette valeur aussi
+  });
+
+
+
+  const soilMoistureRef = firebase.database().ref('soil_moisture');
+const relaisRef = firebase.database().ref('relais');
+
+soilMoistureRef.on('value', (snapshot) => {
+  const value = snapshot.val();
+  console.log('Humidité du sol:', value);
+
+  // Si humidité < 30 => relais ON (true), sinon OFF (false)
+  const shouldActivate = value < 30;
+
+  relaisRef.set(shouldActivate)
+    .then(() => {
+      console.log('Relais mis à jour:', shouldActivate ? 'ON' : 'OFF');
+    })
+    .catch((error) => {
+      console.error('Erreur mise à jour relais:', error);
+    });
+});
+
+
+    </script>
+</body>
+</html>
