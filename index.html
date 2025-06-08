@@ -137,7 +137,7 @@
                          role="menu" aria-orientation="vertical" aria-labelledby="user-menu-button" tabindex="-1">
                         <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" role="menuitem" tabindex="-1" id="user-menu-item-0">Your Profile</a>
                         <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" role="menuitem" tabindex="-1" id="user-menu-item-1">History</a>
-                        <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" role="menuitem" tabindex="-1" id="user-menu-item-2">settings</a>
+                        <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" role="menuitem" tabindex="-1" id="user-menu-item-2">Settings</a>
                         <hr class="my-1">
                         <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" role="menuitem" tabindex="-1" id="user-menu-item-3">Log out</a>
                     </div>
@@ -374,11 +374,11 @@
             OPENWEATHER_API_KEY: 'b35f725ab585c46c7159fe48c269114b', // Replace with your actual OpenWeatherMap API key
             CITY: 'Tunis', // Replace with your city
             UPDATE_INTERVAL: 30 * 60 * 1000, // Weather update interval (30 minutes)
-            INITIAL_MOISTURE: 65, // Starting moisture percentage
+            INITIAL_MOISTURE: 30, // Starting moisture percentage
             INITIAL_ZONES: [ // Moisture for different plant zones
-                { name: 'Lemon Trees', moisture: 68, icon: 'https://cdn-icons-png.flaticon.com/512/15613/15613023.png' },
-                { name: 'Olive Trees', moisture: 55, icon: 'https://cdn-icons-png.flaticon.com/512/5091/5091017.png' },
-                { name: 'Tomato Plants', moisture: 72, icon: 'https://cdn-icons-png.flaticon.com/512/1790/1790387.png' },
+                { name: 'Lemon Trees', moisture: 50, icon: 'https://cdn-icons-png.flaticon.com/512/15613/15613023.png' },
+                { name: 'Olive Trees', moisture: 72, icon: 'https://cdn-icons-png.flaticon.com/512/5091/5091017.png' },
+                { name: 'Tomato Plants', moisture: 80, icon: 'https://cdn-icons-png.flaticon.com/512/1790/1790387.png' },
                 { name: 'Potato Field', moisture: 38, icon: 'https://cdn-icons-png.flaticon.com/512/1790/1790395.png' }
             ]
         };
@@ -397,7 +397,7 @@
         };
 
         let weatherData = {
-            current: { temp: null, condition: 'loading', humidity: null },
+            current: { temp: null, condition: 'loading', humidity: null, precipitationChance: null }, // Added precipitationChance
             forecast: { temp: null, condition: 'loading', precipitationChance: 0 }
         };
 
@@ -515,7 +515,7 @@
                      textColor = 'text-yellow-700';
                 }
 
-                const zoneElement = document.createElement('div');
+                 const zoneElement = document.createElement('div');
                 zoneElement.className = `plant-card ${bgColor} rounded-lg p-4 text-center transition-all hover:shadow-lg hover:-translate-y-1 cursor-pointer`;
                 zoneElement.innerHTML = `
                     <img src="${zone.icon}" class="w-12 h-12 mx-auto mb-2" alt="${zone.name}">
@@ -527,7 +527,7 @@
             });
         }
 
-        function updateMoistureUI() {
+         function updateMoistureUI() {
             const moisture = Math.round(systemState.moisture);
             const soilProfile = soilTypes[autoSchedule.soilType] || soilTypes.loam;
             const minOptimal = soilProfile.optimalMoisture.min;
@@ -609,6 +609,7 @@
             updateSystemStatusUI(); // Update status display
         }
 
+
         function updateSoilSelectionUI() {
             if (!DOMElements.soilTypeSelect || !DOMElements.soilDescription) return;
             const selectedSoil = autoSchedule.soilType;
@@ -619,6 +620,8 @@
             }
             // Update moisture display based on new optimal ranges
             updateMoistureUI();
+            // Also update weather recommendations as optimal ranges changed
+            updateWeatherUI();
         }
 
         function populateSoilSelector() {
@@ -636,15 +639,15 @@
 
         // --- Weather Functions ---
         async function fetchWeatherData() {
-            if (!CONFIG.OPENWEATHER_API_KEY || CONFIG.OPENWEATHER_API_KEY === 'YOUR_API_KEY') {
+            if (!CONFIG.OPENWEATHER_API_KEY || CONFIG.OPENWEATHER_API_KEY === 'b35f725ab585c46c7159fe48c269114b') {
                 console.warn('OpenWeatherMap API key not set. Using mock weather data.');
                 // Use some default mock data if API key is missing
                 weatherData = {
-                    current: { temp: 25, condition: 'sunny', humidity: 50, feelsLike: 26, dewPoint: 14 },
-                    forecast: { temp: 22, condition: 'cloudy', precipitationChance: 20 }
+                    current: { temp: 25, condition: 'sunny', humidity: 50, feelsLike: 26, dewPoint: 14, precipitationChance: 10 }, // Added mock precip chance
+                    forecast: { temp: 22, condition: 'cloudy', precipitationChance: 30 } // Higher mock precip chance for forecast
                 };
                 updateWeatherUI();
-                checkAutoWatering();
+                //checkAutoWatering();
                 return;
             }
 
@@ -653,21 +656,23 @@
                 const response = await fetch(`https://api.openweathermap.org/data/2.5/forecast?q=${CONFIG.CITY}&appid=${CONFIG.OPENWEATHER_API_KEY}&units=metric`);
 
                 if (!response.ok) {
-                    throw new Error(`HTTP error! Status: ${response.status}`);
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+
+                if (!data.list || data.list.length === 0) {
+                    throw new Error('No forecast data available');
                 }
 
-                const data = await response.json();
+                // *** MODIFIED: Use first entry for current conditions including precipitation ***
                 const current = data.list[0];
-                const today = new Date();
-                const tomorrow = new Date(today);
-                tomorrow.setDate(tomorrow.getDate() + 1);
-
                 const tomorrowForecastEntry = data.list.find(entry => {
                     const entryDate = new Date(entry.dt * 1000);
-                    return entryDate.getDate() === tomorrow.getDate() &&
-                           entryDate.getMonth() === tomorrow.getMonth() &&
-                           entryDate.getHours() >= 6; // Look for forecast around morning/midday
-                }) || data.list[8]; // Fallback to ~24 hours later if specific time not found
+                    const tomorrow = new Date();
+                    tomorrow.setDate(tomorrow.getDate() + 1);
+                    tomorrow.setHours(12, 0, 0, 0); // Target noon tomorrow
+                    return Math.abs(entryDate.getTime() - tomorrow.getTime()) < 2 * 60 * 60 * 1000; // 2-hour tolerance
+                }) || data.list[8]; // Fallback to ~24 hours later
 
                 // Calculate Dew Point (approximation)
                 const tempC = current.main.temp;
@@ -683,7 +688,9 @@
                     condition: getWeatherCondition(current.weather[0].id),
                     humidity: current.main.humidity,
                     feelsLike: Math.round(current.main.feels_like),
-                    dewPoint: Math.round(dewPointC)
+                    dewPoint: Math.round(dewPointC),
+                    // *** ADDED: Use precipitation probability from the first forecast entry ***
+                    precipitationChance: Math.round((current.pop || 0) * 100)
                 };
 
                 if (tomorrowForecastEntry) {
@@ -695,18 +702,20 @@
                 }
 
                 updateWeatherUI();
-                checkAutoWatering(); // Check if watering is needed based on new weather
+                //checkAutoWatering(); // Check if watering is needed based on new weather
                 console.log('Weather data updated:', weatherData);
             } catch (error) {
                 console.error('Error fetching weather data:', error);
                 // Display error or use fallback data
                  weatherData = {
-                    current: { temp: 'N/A', condition: 'error', humidity: 'N/A', feelsLike: 'N/A', dewPoint: 'N/A' },
+                    current: { temp: 'N/A', condition: 'error', humidity: 'N/A', feelsLike: 'N/A', dewPoint: 'N/A', precipitationChance: 'N/A' },
                     forecast: { temp: 'N/A', condition: 'error', precipitationChance: 'N/A' }
                 };
                 updateWeatherUI();
             }
         }
+
+
 
         function getWeatherCondition(code) {
             if (code >= 200 && code < 300) return 'thunderstorm';
@@ -731,56 +740,172 @@
                 default: return 'fas fa-question-circle text-gray-500';
             }
         }
+            
+        //getWateringRecommendation Function 
+           function getWateringRecommendation({ temp, precipitationChance, soilMoisture, soilProfile }) {
+            // Use the provided soil profile, or default to loam if not provided or invalid
+            const profile = soilProfile && soilTypes[soilProfile.type] ? soilProfile : soilTypes.loam;
+            const minOptimal = profile.optimalMoisture.min;
+            const maxOptimal = profile.optimalMoisture.max;
 
-        function updateWeatherUI() {
-            // Update dashboard cards
-            if (DOMElements.currentTemp) DOMElements.currentTemp.textContent = weatherData.current.temp !== null ? `${weatherData.current.temp}°C` : '--°C';
-            if (DOMElements.feelsLikeTemp) DOMElements.feelsLikeTemp.textContent = weatherData.current.feelsLike !== null ? `Feels like ${weatherData.current.feelsLike}°C` : 'Feels like --°C';
-            if (DOMElements.currentHumidity) DOMElements.currentHumidity.textContent = weatherData.current.humidity !== null ? `${weatherData.current.humidity}%` : '--%';
-            if (DOMElements.dewPoint) DOMElements.dewPoint.textContent = weatherData.current.dewPoint !== null ? `Dew point: ${weatherData.current.dewPoint}°C` : 'Dew point: --°C';
+            // Ensure numeric inputs where needed
+            const numPrecipitationChance = Number(precipitationChance);
+            const numSoilMoisture = Number(soilMoisture);
+            const numTemp = Number(temp);
 
-            // Update Weather-Based Irrigation Panel
-            const todayCard = document.querySelector('.weather-today');
-            const tomorrowCard = document.querySelector('.weather-tomorrow');
+            // Handle cases where data might not be available (e.g., API error)
+            if (isNaN(numPrecipitationChance) || isNaN(numSoilMoisture) || isNaN(numTemp)) {
+                return {
+                    message: 'Data unavailable.',
+                    classes: 'bg-gray-100 text-gray-800',
+                    icon: 'fa-question-circle'
+                };
+            }
 
-            if (todayCard) {
-                const iconEl = todayCard.querySelector('.text-5xl i');
-                if (iconEl) iconEl.className = `${getWeatherIconClass(weatherData.current.condition)} text-5xl mb-3`;
-                if (DOMElements.weatherTodayDetails) DOMElements.weatherTodayDetails.textContent = `${weatherData.current.temp}°C / ${capitalizeFirst(weatherData.current.condition)}`;
-                if (DOMElements.weatherTodayRecommendation) {
-                    let recommendation = 'No specific action needed.';
-                    let classes = 'bg-green-100 text-green-800';
-                    let icon = 'fa-check-circle';
-                    if (weatherData.current.condition === 'rainy' || weatherData.current.condition === 'thunderstorm') {
-                        recommendation = 'Watering likely not needed today.';
-                        classes = 'bg-blue-100 text-blue-800';
-                        icon = 'fa-info-circle';
-                    }
-                    DOMElements.weatherTodayRecommendation.className = `mt-2 p-2 rounded-lg ${classes} font-medium`;
-                    DOMElements.weatherTodayRecommendation.innerHTML = `<i class="fas ${icon} mr-1"></i> ${recommendation}`;
+            // 1. Check for significant rain probability
+            if (numPrecipitationChance > 50) {
+                return {
+                    message: `Rain expected (${numPrecipitationChance}%): watering not required.`,
+                    classes: 'bg-blue-100 text-blue-800',
+                    icon: 'fa-cloud-rain'
+                };
+            }
+
+            // 2. Check if soil is too wet
+            if (numSoilMoisture > maxOptimal) {
+                return {
+                    message: 'Very wet soil: avoid watering.',
+                    classes: 'bg-cyan-100 text-cyan-800', // Different color for 'too wet'
+                    icon: 'fa-tint-slash'
+                };
+            }
+
+            // 3. Check if soil is critically dry
+            if (numSoilMoisture < minOptimal) {
+                // Distinguish based on temperature
+                if (numTemp > 28) { // Slightly lowered threshold for heat impact
+                    return {
+                        message: 'Dry soil and heat : watering recommended.',
+                        classes: 'bg-red-100 text-red-800',
+                        icon: 'fa-exclamation-triangle'
+                    };
+                } else {
+                    return {
+                        message: 'Dry soil: remember to water.',
+                        classes: 'bg-yellow-100 text-yellow-800',
+                        icon: 'fa-water'
+                    };
                 }
             }
 
+            // 4. Check if moisture is in the lower part of the optimal range
+            if (numSoilMoisture < minOptimal + (maxOptimal - minOptimal) * 0.3) { // If in the bottom 30% of optimal range
+                return {
+                    message: 'Optimal humidity but low, monitor.',
+                    classes: 'bg-lime-100 text-lime-800',
+                    icon: 'fa-leaf'
+                };
+            }
+
+            // 5. Default case: Moisture is optimal
+            return {
+                message: 'Optimal humidity: no action required.',
+                classes: 'bg-green-100 text-green-800',
+                icon: 'fa-check-circle'
+            };
+        } 
+
+
+function getTomorrowRecommendation(precipitationChance) {
+    const chance = Number(precipitationChance);
+
+    if (isNaN(chance)) {
+        return {
+            message: 'Données indisponibles.',
+            classes: 'bg-gray-100 text-gray-800',
+            icon: 'fa-question-circle'
+        };
+    }
+
+    if (chance > 60) {
+        return {
+            message: `Fortes pluies probables (${chance}%) : arrosage déconseillé.`,
+            classes: 'bg-blue-100 text-blue-800',
+            icon: 'fa-cloud-showers-heavy'
+        };
+    } else if (chance > 30) {
+        return {
+            message: `Pluie possible (${chance}%) : surveillez avant d’arroser.`,
+            classes: 'bg-yellow-100 text-yellow-800',
+            icon: 'fa-cloud-sun-rain'
+        };
+    } else {
+        return {
+            message: `Peu de pluie prévue (${chance}%) : arrosage recommandé si besoin.`,
+            classes: 'bg-green-100 text-green-800',
+            icon: 'fa-tint'
+        };
+    }
+}
+
+
+        function updateWeatherUI() {
+            // Update dashboard cards
+            if (DOMElements.currentTemp)
+                DOMElements.currentTemp.textContent = weatherData.current.temp !== null && weatherData.current.temp !== 'N/A' ? `${weatherData.current.temp}°C` : '--°C';
+            if (DOMElements.feelsLikeTemp)
+                DOMElements.feelsLikeTemp.textContent = weatherData.current.feelsLike !== null && weatherData.current.feelsLike !== 'N/A' ? `Feels like ${weatherData.current.feelsLike}°C` : 'Feels like --°C';
+            if (DOMElements.currentHumidity)
+                DOMElements.currentHumidity.textContent = weatherData.current.humidity !== null && weatherData.current.humidity !== 'N/A' ? `${weatherData.current.humidity}%` : '--%';
+            if (DOMElements.dewPoint)
+                DOMElements.dewPoint.textContent = weatherData.current.dewPoint !== null && weatherData.current.dewPoint !== 'N/A' ? `Dew point: ${weatherData.current.dewPoint}°C` : 'Dew point: --°C';
+
+            // *** MODIFIED: Get current soil profile ***
+            const currentSoilProfile = soilTypes[autoSchedule.soilType] || soilTypes.loam;
+            // Add the type key to the profile object for the recommendation function
+            currentSoilProfile.type = autoSchedule.soilType || 'loam';
+
+            // Weather Today
+            const todayCard = document.querySelector('.weather-today');
+            if (todayCard) {
+                const iconEl = todayCard.querySelector('.text-5xl i');
+                if (iconEl)
+                    iconEl.className = `${getWeatherIconClass(weatherData.current.condition)} text-5xl mb-3`;
+
+                if (DOMElements.weatherTodayDetails)
+                    DOMElements.weatherTodayDetails.textContent = (weatherData.current.temp !== 'N/A' ? `${weatherData.current.temp}°C` : '--°C') + ` / ${capitalizeFirst(weatherData.current.condition)}`;
+
+                if (DOMElements.weatherTodayRecommendation) {
+                    // *** MODIFIED: Pass the soil profile ***
+                    const recommendation = getWateringRecommendation({
+                        temp: weatherData.current.temp,
+                        precipitationChance: weatherData.current.precipitationChance,
+                        soilMoisture: systemState.moisture,
+                        soilProfile: currentSoilProfile
+                    });
+
+                    DOMElements.weatherTodayRecommendation.className = `mt-2 p-2 rounded-lg ${recommendation.classes} font-medium`;
+                    DOMElements.weatherTodayRecommendation.innerHTML = `<i class="fas ${recommendation.icon} mr-1"></i> ${recommendation.message}`;
+                }
+            }
+
+            // Weather Tomorrow
+            const tomorrowCard = document.querySelector('.weather-tomorrow');
             if (tomorrowCard) {
                 const iconEl = tomorrowCard.querySelector('.text-5xl i');
-                 if (iconEl) iconEl.className = `${getWeatherIconClass(weatherData.forecast.condition)} text-5xl mb-3`;
-                if (DOMElements.weatherTomorrowDetails) DOMElements.weatherTomorrowDetails.textContent = `${weatherData.forecast.temp}°C / ${capitalizeFirst(weatherData.forecast.condition)}`;
+                if (iconEl)
+                    iconEl.className = `${getWeatherIconClass(weatherData.forecast.condition)} text-5xl mb-3`;
+
+                if (DOMElements.weatherTomorrowDetails)
+                    DOMElements.weatherTomorrowDetails.textContent = (weatherData.forecast.temp !== 'N/A' ? `${weatherData.forecast.temp}°C` : '--°C') + ` / ${capitalizeFirst(weatherData.forecast.condition)}`;
+
                 if (DOMElements.weatherTomorrowRecommendation) {
-                    let recommendation = 'Monitor conditions.';
-                    let classes = 'bg-gray-100 text-gray-800';
-                    let icon = 'fa-clock';
-                    if (weatherData.forecast.precipitationChance > 50) {
-                        recommendation = `Reduce watering (${weatherData.forecast.precipitationChance}% rain chance).`;
-                        classes = 'bg-blue-100 text-blue-800';
-                        icon = 'fa-cloud-rain';
-                    } else if (weatherData.forecast.temp > 30) {
-                         recommendation = 'Potential high heat, ensure adequate moisture.';
-                         classes = 'bg-yellow-100 text-yellow-800';
-                         icon = 'fa-temperature-high';
-                    }
-                    DOMElements.weatherTomorrowRecommendation.className = `mt-2 p-2 rounded-lg ${classes} font-medium`;
-                    DOMElements.weatherTomorrowRecommendation.innerHTML = `<i class="fas ${icon} mr-1"></i> ${recommendation}`;
-                }
+    const recommendation = getTomorrowRecommendation(weatherData.forecast.precipitationChance);
+
+    DOMElements.weatherTomorrowRecommendation.className = `mt-2 p-2 rounded-lg ${recommendation.classes} font-medium`;
+    DOMElements.weatherTomorrowRecommendation.innerHTML = `<i class="fas ${recommendation.icon} mr-1"></i> ${recommendation.message}`;
+}
+
             }
         }
 
@@ -824,6 +949,7 @@
                 updateMoistureUI();
                 updateZonesUI();
                 updateSystemStatusUI();
+                updateWeatherUI(); // Refresh recommendations after watering
 
                 // Show success state on button (only if manually triggered)
                 if (!isAutoTriggered) {
@@ -917,6 +1043,7 @@
                  DOMElements.scheduleModal.classList.add('modal-enter'); // Reset for next open
              }, 300); // Match animation duration
         }
+
 
         function saveScheduleSettings() {
             autoSchedule.enabled = DOMElements.enableScheduleCheckbox.checked;
@@ -1093,12 +1220,11 @@
             });
         }
 
-        // Placeholder for other JS functionalities (weather, moisture, controls, etc.)
-        // ... (Keep existing or add new JS logic here)
+        
     });
         // --- Initialization ---
         function initApp() {
-            console.log('Initializing Smart Irrigation System v2...');
+            console.log('Initializing Smart Irrigation System ');
             cacheDOMElements();
 
             // Populate dynamic elements
@@ -1110,6 +1236,7 @@
             updateSystemStatusUI();
             updateOperationModeUI(); // Set initial mode display
 
+
             // Fetch initial weather data
             fetchWeatherData();
             // Set up weather data refresh interval
@@ -1118,7 +1245,9 @@
             // Initialize auto-scheduling check interval
             setInterval(checkAutoWatering, 60 * 1000); // Check every minute
 
+
             // --- Event Listeners ---
+
             // Manual Water Button
             if (DOMElements.waterNowButton) {
                 DOMElements.waterNowButton.addEventListener('click', () => handleWatering(false));
@@ -1181,16 +1310,9 @@
             // Initialize Chatbot
             initializeChatbot();
 
-            // Optional: Simulate gradual moisture decrease over time
-            // setInterval(() => {
-            //     if (systemState.moisture > 0) systemState.moisture = Math.max(0, systemState.moisture - 0.1);
-            //     systemState.zones = systemState.zones.map(z => ({...z, moisture: Math.max(0, z.moisture - 0.08)}));
-            //     updateMoistureUI();
-            //     updateZonesUI();
-            // }, 60 * 1000); // Decrease slightly every minute
-
-            console.log('Smart Irrigation System initialized successfully.');
+            console.log('H2optima initialized successfully.');
         }
+
 
         // Wait for DOM to be fully loaded before initializing
         if (document.readyState === 'loading') {
@@ -1199,7 +1321,7 @@
             initApp(); // DOM is already loaded
         }
 
-        const firebaseConfig = {
+       const firebaseConfig = {
         apiKey: "AIzaSyBQhVMcGJdpq1t7TfRIaerhXPizoYjzT14",
         authDomain: "smart-irrigation-ccacc.firebaseapp.com",
         databaseURL: "https://smart-irrigation-ccacc-default-rtdb.europe-west1.firebasedatabase.app/",
@@ -1207,28 +1329,31 @@
         storageBucket: "smart-irrigation-ccacc.firebasestorage.app",
         messagingSenderId: "1059891109468",
         appId: "1:1059891109468:web:330a52e507ee460f72d099"
-          };
-          const app = firebase.initializeApp(firebaseConfig);
-          const db = firebase.database();
+        };
 
-          db.ref("soil_moisture").on("value", (snapshot) => {
-    const value = snapshot.val(); // ex: 65
-    document.getElementById("moisture-percentage").textContent = value + "%";
-    document.getElementById("moisture-level-bar").style.width = value + "%";
+        const app = firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
 
-    // Optionnel : ajuster le statut
-    const status = document.getElementById("moisture-status");
-    if (value < 30) {
-      status.textContent = "Dry";
-      status.className = "text-sm font-medium px-2 py-1 rounded-full bg-red-100 text-red-700";
-    } else if (value < 70) {
-      status.textContent = "Optimal";
-      status.className = "text-sm font-medium px-2 py-1 rounded-full bg-green-100 text-green-700";
-    } else {
-      status.textContent = "Wet";
-      status.className = "text-sm font-medium px-2 py-1 rounded-full bg-blue-100 text-blue-700";
-    }
-  });
+        db.ref("soil_moisture").on("value", (snapshot) => {
+        const value = snapshot.val(); // ex: 65
+        document.getElementById("moisture-percentage").textContent = value + "%";
+        document.getElementById("moisture-level-bar").style.width = value + "%";
+
+        // Optionnel : ajuster le statut
+        const status = document.getElementById("moisture-status");
+        if (value < 30) {
+        status.textContent = "Dry";
+        status.className = "text-sm font-medium px-2 py-1 rounded-full bg-red-100 text-red-700";
+        }else if (value < 70) {
+        status.textContent = "Optimal";
+        status.className = "text-sm font-medium px-2 py-1 rounded-full bg-green-100 text-green-700";
+        }else {
+        status.textContent = "Wet";
+        status.className = "text-sm font-medium px-2 py-1 rounded-full bg-blue-100 text-blue-700";
+        }
+        });
+
+
 
   // 🔁 Temperature
   db.ref("temperature").on("value", (snapshot) => {
@@ -1247,7 +1372,7 @@
 
 
   const soilMoistureRef = firebase.database().ref('soil_moisture');
-const relaisRef = firebase.database().ref('relais');
+  const relaisRef = firebase.database().ref('relais');
 
 soilMoistureRef.on('value', (snapshot) => {
   const value = snapshot.val();
@@ -1266,7 +1391,6 @@ soilMoistureRef.on('value', (snapshot) => {
 });
 
 
-
-    </script>
-</body>
-</html>
+ </script>
+ </body>
+ </html>
